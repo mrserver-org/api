@@ -1,7 +1,7 @@
 <div align="center">
   <img height="150" src="https://raw.githubusercontent.com/mrserver-org/ui/refs/heads/main/logo.png">
   <h1>MrServer API</h1>
-  <p><em>Backend for [MrServer](https://github.com/mrserver-org/ui)</em></p>
+  <p><em>Backend for <a href="https://github.com/mrserver-org/ui">MrServer</a></em></p>
 </div>
 
 **MrServer** (said as "Mister Server") is a web-based server management platform with a desktop-like experience.
