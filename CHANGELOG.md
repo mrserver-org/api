@@ -11,6 +11,6 @@ v1.2.0
 - Added much more improved security
 - Added Role-based authentication
 
-WIP
+v1.2.1
 
 - fixed auth for terminal websocket.
