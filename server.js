@@ -339,8 +339,38 @@ app.get("/api/file_manager/list", authenticate, authorize([ROLES.ADMIN, ROLES.US
     });
   });
 });
-app.get("/api/file_manager/download", authenticate, authorize([ROLES.ADMIN, ROLES.USER]), (req, res) => {
+app.get("/api/file_manager/download", (req, res) => {
   let filePath = req.query.path;
+  let username = req.query.username;
+  let password = req.query.password;
+  if (!username || !password) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  const usersPath = `${os.homedir()}/.mrserver/users.json`;
+  if (!fs.existsSync(usersPath)) {
+    return res.status(500).json({ error: 'Users database not found' });
+  }
+  const users = JSON.parse(fs.readFileSync(usersPath));
+  const user = users.find(u => u.username === username);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  const passwordMatch = (password == user.password);
+  if (!passwordMatch) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  if (user.role !== ROLES.ADMIN && user.role !== ROLES.USER) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  if (user.role === ROLES.GUEST) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  if (user.role === ROLES.USER && !filePath.startsWith(os.homedir())) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
   res.download(filePath);
 });
 
@@ -433,6 +463,11 @@ app.get("/api/terminal_exec", authenticate, authorize([ROLES.ADMIN]), (req, res)
 const terminals = new Map();
 
 app.ws('/api/terminal', async (ws, req) => {
+  console.log('[BACKEND] WebSocket connection established');
+  if (!req.query.username || !req.query.password) {
+    ws.send(JSON.stringify({ error: 'Authentication required' }));
+    return ws.close();
+  }
   const { username, password } = req.query;
   
   if (!username || !password) {
@@ -455,14 +490,15 @@ app.ws('/api/terminal', async (ws, req) => {
       return ws.close();
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = (password == user.password);
     if (!passwordMatch) {
       ws.send(JSON.stringify({ error: 'Invalid credentials' }));
       return ws.close();
     }
 
     if (user.role !== ROLES.ADMIN) {
-      ws.send(JSON.stringify({ error: 'Insufficient permissions' }));
+      ws.send(JSON.stringify({ error: `Insufficient permissions. Got: ${user.role}` }));
+      console.log(`[BACKEND] ${user.role} tried to access the terminal.`);
       return ws.close();
     }
     
