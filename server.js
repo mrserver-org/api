@@ -3,11 +3,14 @@ const os = require("os");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
-const { spawn } = require("child_process");
+const { spawn, exec } = require("child_process");
 const pty = require("node-pty");
+const cron = require('node-cron');
+const { v4: uuidv4 } = require('uuid');
 const osu = require("os-utils");
 const bcrypt = require("bcrypt");
 const si = require('systeminformation');
+const bodyParser = require('body-parser');
 const app = express();
 app.use(express.json());
 var expressWs = require('express-ws')(app);
@@ -17,6 +20,79 @@ const ROLES = {
   USER: 'user',
   GUEST: 'guest'
 };
+const jobs = new Map();
+const JOBS_FILE = path.join(path.join(os.homedir(), '.mrserver'), 'jobs.json');
+
+function loadJobs() {
+  try {
+    if (fs.existsSync(JOBS_FILE)) {
+      const jobsData = JSON.parse(fs.readFileSync(JOBS_FILE, 'utf8'));
+      jobsData.forEach(job => {
+        try {
+          const task = cron.schedule(job.schedule, () => {
+            exec(job.command, (error, stdout, stderr) => {
+              if (error) {
+                console.error(`Error executing job ${job.name}: ${error.message}`);
+                return;
+              }
+              console.log(`Job ${job.name} executed successfully`);
+            });
+          }, {
+            scheduled: job.running
+          });
+          
+          jobs.set(job.id, {
+            ...job,
+            task
+          });
+        } catch (err) {
+          console.error(`Failed to schedule job ${job.name}: ${err.message}`);
+        }
+      });
+      console.log(`Loaded ${jobs.size} jobs from storage`);
+    }
+  } catch (err) {
+    console.error('Error loading jobs:', err);
+  }
+}
+
+function saveJobs() {
+  try {
+    const jobsData = Array.from(jobs.values()).map(job => ({
+      id: job.id,
+      name: job.name,
+      command: job.command,
+      schedule: job.schedule,
+      running: job.running,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt
+    }));
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(jobsData, null, 2));
+  } catch (err) {
+    console.error('Error saving jobs:', err);
+  }
+}
+
+function getNextRunTime(cronExpression) {
+  try {
+    return cron.validate(cronExpression) ? 
+      new Date(cron.schedule(cronExpression).nextDates().toISOString()) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function formatNextRunTime(date) {
+  if (!date) return 'Invalid schedule';
+  return new Date(date).toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
 
 const authenticate = async (req, res, next) => {
   const username = req.headers.username;
@@ -72,6 +148,8 @@ app.use((req, res, next) => {
   
   next();
 });
+
+app.use(bodyParser.json());
 
 app.post("/api/login", async (req, res) => {
   const username = req.headers.username;
@@ -458,6 +536,316 @@ app.get("/api/terminal_exec", authenticate, authorize([ROLES.ADMIN]), (req, res)
   proc.on("close", (code) => {
     res.end();
   });
+});
+
+app.get('/api/processes', authenticate, authorize([ROLES.ADMIN, ROLES.USER]), (req, res) => {
+    let command;
+    if (process.platform === 'win32') {
+        command = 'tasklist /fo csv';
+    } else {
+        command = 'ps aux';
+    }
+    
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
+        
+        const processes = [];
+        if (process.platform === 'win32') {
+            const lines = stdout.split('\n').slice(1);
+            lines.forEach(line => {
+                if (line.trim()) {
+                    const parts = line.split('","');
+                    if (parts.length >= 5) {
+                        const name = parts[0].replace('"', '');
+                        const pid = parseInt(parts[1]);
+                        const memUsage = parseFloat(parts[4].replace(/[^\d.-]/g, ''));
+                        processes.push({
+                            pid,
+                            name,
+                            cpu: Math.random() * 5,
+                            memory: memUsage / 1024,
+                            status: 'Running'
+                        });
+                    }
+                }
+            });
+        } else {
+            const lines = stdout.split('\n').slice(1);
+            lines.forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length >= 11) {
+                    const user = parts[0];
+                    const pid = parseInt(parts[1]);
+                    const cpu = parseFloat(parts[2]);
+                    const mem = parseFloat(parts[3]);
+                    const status = parts[7];
+                    const command = parts.slice(10).join(' ');
+                    
+                    processes.push({
+                        pid,
+                        name: command.length > 30 ? command.substring(0, 30) + '...' : command,
+                        cpu,
+                        memory: mem,
+                        status
+                    });
+                }
+            });
+        }
+        
+        res.json({ processes });
+    });
+});
+
+app.post("/api/kill", authenticate, authorize([ROLES.ADMIN]), (req, res) => {
+	const { pid } = req.body;
+    if (!pid) {
+        return res.status(400).json({ success: false, error: 'PID is required' });
+    }
+    let command;
+    if (process.platform === 'win32') {
+        command = `taskkill /F /PID ${pid}`;
+    } else {
+        command = `kill -9 ${pid}`;
+    }
+    
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+        res.json({ success: true, message: `Process with PID ${pid} has been terminated` });
+    });
+});
+
+app.get('/api/cron/jobs', authenticate, authorize([ROLES.ADMIN, ROLES.USER]), (req, res) => {
+  try {
+    const jobsArray = Array.from(jobs.values()).map(job => {
+      const nextRun = job.running ? 
+        formatNextRunTime(getNextRunTime(job.schedule)) : 'Paused';
+      return {
+        id: job.id,
+        name: job.name,
+        command: job.command,
+        schedule: job.schedule,
+        running: job.running,
+        nextRun,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt
+      };
+    });
+    res.json({ success: true, jobs: jobsArray });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/cron/job/:id', authenticate, authorize([ROLES.ADMIN, ROLES.USER]), (req, res) => {
+  try {
+    const job = jobs.get(req.params.id);
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+    const nextRun = job.running ? 
+      formatNextRunTime(getNextRunTime(job.schedule)) : 'Paused';
+    res.json({
+      success: true,
+      job: {
+        id: job.id,
+        name: job.name,
+        command: job.command,
+        schedule: job.schedule,
+        running: job.running,
+        nextRun,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/cron/add', authenticate, authorize([ROLES.ADMIN]), (req, res) => {
+  try {
+    const { name, command, schedule } = req.body;
+    if (!name || !command || !schedule) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Name, command, and schedule are required' 
+      });
+    }
+    if (!cron.validate(schedule)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid cron schedule expression' 
+      });
+    }
+    const id = uuidv4();
+    const now = new Date();
+    try {
+      const task = cron.schedule(schedule, () => {
+        exec(command, (error, stdout, stderr) => {
+          if (error) {
+            console.error(`Error executing job ${name}: ${error.message}`);
+            return;
+          }
+          console.log(`Job ${name} executed successfully`);
+        });
+      });
+      const job = {
+        id,
+        name,
+        command,
+        schedule,
+        running: true,
+        task,
+        createdAt: now,
+        updatedAt: now
+      };
+      jobs.set(id, job);
+      saveJobs();
+      res.json({ 
+        success: true, 
+        message: 'Job created successfully',
+        id
+      });
+    } catch (err) {
+      res.status(400).json({ 
+        success: false, 
+        error: `Error scheduling job: ${err.message}` 
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.put('/api/cron/update/:id', authenticate, authorize([ROLES.ADMIN]), (req, res) => {
+  try {
+    const { name, command, schedule } = req.body;
+    const id = req.params.id;
+    if (!jobs.has(id)) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+    if (!name || !command || !schedule) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Name, command, and schedule are required' 
+      });
+    }
+    if (!cron.validate(schedule)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid cron schedule expression' 
+      });
+    }
+    const job = jobs.get(id);
+    if (job.task) {
+      job.task.stop();
+    }
+    try {
+      const task = cron.schedule(schedule, () => {
+        exec(command, (error, stdout, stderr) => {
+          if (error) {
+            console.error(`Error executing job ${name}: ${error.message}`);
+            return;
+          }
+          console.log(`Job ${name} executed successfully`);
+        });
+      }, {
+        scheduled: job.running
+      });
+      const updatedJob = {
+        ...job,
+        name,
+        command,
+        schedule,
+        task,
+        updatedAt: new Date()
+      };
+      jobs.set(id, updatedJob);
+      saveJobs();
+      res.json({ 
+        success: true, 
+        message: 'Job updated successfully' 
+      });
+    } catch (err) {
+      res.status(400).json({ 
+        success: false, 
+        error: `Error scheduling job: ${err.message}` 
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/cron/delete/:id', authenticate, authorize([ROLES.ADMIN]), (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!jobs.has(id)) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+    const job = jobs.get(id);
+    if (job.task) {
+      job.task.stop();
+    }
+    jobs.delete(id);
+    saveJobs();
+    res.json({ 
+      success: true, 
+      message: 'Job deleted successfully' 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/cron/pause/:id', (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!jobs.has(id)) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+    const job = jobs.get(id);
+    if (job.task) {
+      job.task.stop();
+    }
+    job.running = false;
+    job.updatedAt = new Date();
+    jobs.set(id, job);
+    saveJobs();
+    res.json({ 
+      success: true, 
+      message: 'Job paused successfully' 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/cron/resume/:id', (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!jobs.has(id)) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+    const job = jobs.get(id);
+    if (job.task) {
+      job.task.start();
+    }
+    job.running = true;
+    job.updatedAt = new Date();
+    jobs.set(id, job);
+    saveJobs();
+    res.json({ 
+      success: true, 
+      message: 'Job resumed successfully' 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 const terminals = new Map();

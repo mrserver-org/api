@@ -14,3 +14,7 @@ v1.2.0
 v1.2.1
 
 - fixed auth for terminal websocket.
+
+WIP
+
+- added cron jobs
