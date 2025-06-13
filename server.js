@@ -193,12 +193,9 @@ app.get("/api/system", async (req, res) => {
       osInfo,
       network,
       disk,
-      processes,
       temps,
       battery,
       versions,
-      users,
-      services,
       system
     ] = await Promise.all([
       si.currentLoad(),
@@ -206,15 +203,11 @@ app.get("/api/system", async (req, res) => {
       si.osInfo(),
       si.networkInterfaces(),
       si.fsSize(),
-      si.processes(),
       si.cpuTemperature(),
       si.battery(),
       si.versions(),
-      si.users(),
-      si.services('*'),
       si.system()
     ]);
-
     const response = {
       os: {
         platform: osInfo.platform,
@@ -223,7 +216,6 @@ app.get("/api/system", async (req, res) => {
         kernel: osInfo.kernel,
         arch: osInfo.arch,
         hostname: osInfo.hostname,
-        uptime: osInfo.uptime,
         logofile: osInfo.logofile
       },
 
@@ -282,12 +274,6 @@ app.get("/api/system", async (req, res) => {
       },
 
       status: {
-        processes: processes.all,
-        running: processes.running,
-        blocked: processes.blocked,
-        sleeping: processes.sleeping,
-        users: users.length,
-        services: services.length,
         battery: battery.hasBattery ? {
           level: battery.percent,
           charging: battery.isCharging,
@@ -457,7 +443,7 @@ app.get("/api/file_manager/content", authenticate, authorize([ROLES.ADMIN, ROLES
   res.send(fs.readFileSync(filePath));
 });
 
-app.post("/api/file_manager/write", authenticate, authorize([ROLES.ADMIN, ROLES.USER]), (req, res) => {
+app.post("/api/file_manager/write", authenticate, authorize([ROLES.ADMIN]), (req, res) => {
   let filePath = req.body.path;
   let content = req.body.content;
   console.log(filePath);
@@ -466,7 +452,7 @@ app.post("/api/file_manager/write", authenticate, authorize([ROLES.ADMIN, ROLES.
   res.end();
 });
 
-app.post("/api/file_manager/operate", authenticate, authorize([ROLES.ADMIN, ROLES.USER]), (req, res) => {
+app.post("/api/file_manager/operate", authenticate, authorize([ROLES.ADMIN]), (req, res) => {
   let op = req.body.operation;
   let source = req.body.source;
   if (op === "delete") {
@@ -484,7 +470,7 @@ app.post("/api/file_manager/operate", authenticate, authorize([ROLES.ADMIN, ROLE
         });
       }
     });
-  } else if (op === "set_wallpaper") {
+	} else if (op === "//TODO") { //TODO
     res.end();
   } else {
     res.status(400).end();

@@ -18,3 +18,5 @@ v1.2.1
 WIP
 
 - added cron jobs
+- removed uptime (because it wasnt working)
+- improved security by making ROLES.USER cant operate on files or write to files.
