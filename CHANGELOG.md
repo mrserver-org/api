@@ -1,4 +1,4 @@
-v1.0.0
+v1.0.0 "Apollo"
 
 - Initial Release
 
@@ -15,7 +15,7 @@ v1.2.1
 
 - fixed auth for terminal websocket.
 
-WIP
+v2.0.0 "Blitz"
 
 - added cron jobs
 - removed uptime (because it wasnt working)
