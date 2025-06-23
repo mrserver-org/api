@@ -23,7 +23,7 @@
     "node-cron": "^4.1.0",
     "node-pty": "^1.0.0",
     "os-utils": "^0.0.14",
-    "systeminformation": "^5.27.1",
+    "systeminformation": "^5.27.6",
     "uuid": "^11.1.0"
   }
 }

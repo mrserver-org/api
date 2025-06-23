@@ -36,8 +36,8 @@ importers:
         specifier: ^0.0.14
         version: 0.0.14
       systeminformation:
-        specifier: ^5.27.1
-        version: 5.27.1
+        specifier: ^5.27.6
+        version: 5.27.6
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -483,8 +483,8 @@ packages:
     resolution: {integrity: sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow==}
     engines: {node: '>=4'}
 
-  systeminformation@5.27.1:
-    resolution: {integrity: sha512-FgkVpT6GgATtNvADgtEzDxI/SVaBisfnQ4fmgQZhCJ4335noTgt9q6O81ioHwzs9HgnJaaFSdHSEMIkneZ55iA==}
+  systeminformation@5.27.6:
+    resolution: {integrity: sha512-9gmEXEtFp8vkewF8MLo69OmYBf0UpvGnqfAQs0kO+dgJRyFuCDxBwX53NQj4p/aV4fFmJQry+K1LLxPadAgmFQ==}
     engines: {node: '>=8.0.0'}
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
@@ -1018,7 +1018,7 @@ snapshots:
     dependencies:
       has-flag: 3.0.0
 
-  systeminformation@5.27.1: {}
+  systeminformation@5.27.6: {}
 
   to-regex-range@5.0.1:
     dependencies:
