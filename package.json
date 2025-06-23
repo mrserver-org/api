@@ -20,7 +20,7 @@
     "express-ws": "5.0.2",
     "fs": "0.0.2",
     "multer": "2.0.1",
-    "node-cron": "^4.1.0",
+    "node-cron": "^4.1.1",
     "node-pty": "^1.0.0",
     "os-utils": "^0.0.14",
     "systeminformation": "^5.27.1",
